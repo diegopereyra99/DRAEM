@@ -88,6 +88,8 @@ class MVTecDRAEMTrainDataset(Dataset):
                       iaa.pillike.Equalize(),
                       iaa.Affine(rotate=(-45, 45))
                       ]
+        
+        self.to_grayscale = iaa.Grayscale((0.6, 0.9))
 
         self.rot = iaa.Sequential([iaa.Affine(rotate=(-90, 90))])
 
@@ -100,8 +102,10 @@ class MVTecDRAEMTrainDataset(Dataset):
         aug_ind = np.random.choice(np.arange(len(self.augmenters)), 3, replace=False)
         aug = iaa.Sequential([self.augmenters[aug_ind[0]],
                               self.augmenters[aug_ind[1]],
-                              self.augmenters[aug_ind[2]]]
-                             )
+                              self.augmenters[aug_ind[2]],
+                              self.to_grayscale,
+                              ])
+        # The augmented image is converted to grayscale because otherwise it is to easy for the detector to see where there is color
         return aug
 
     def augment_image(self, image, anomaly_source_path):

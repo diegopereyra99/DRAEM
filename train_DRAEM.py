@@ -53,7 +53,7 @@ def train_on_device(obj_names, args):
         dataset = MVTecDRAEMTrainDataset(args.data_path + obj_name + "/train/good/", args.anomaly_source_path, resize_shape=[256, 256])
 
         dataloader = DataLoader(dataset, batch_size=args.bs,
-                                shuffle=True, num_workers=16)
+                                shuffle=True, num_workers=args.num_workers)
 
         n_iter = 0
         for epoch in range(args.epochs):
@@ -114,11 +114,12 @@ if __name__=="__main__":
     parser.add_argument('--anomaly_source_path', action='store', type=str, required=True)
     parser.add_argument('--checkpoint_path', action='store', type=str, required=True)
     parser.add_argument('--log_path', action='store', type=str, required=True)
+    parser.add_argument('--num-workers', action='store', default=16, type=int)
     parser.add_argument('--visualize', action='store_true')
 
     args = parser.parse_args()
 
-    obj_batch = [['capsule'],
+    obj_batch = [['recoating'],
                  ['bottle'],
                  ['carpet'],
                  ['leather'],
