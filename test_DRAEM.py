@@ -154,22 +154,7 @@ if __name__=="__main__":
 
     args = parser.parse_args()
 
-    obj_list = ['capsule',
-                 'bottle',
-                 'carpet',
-                 'leather',
-                 'pill',
-                 'transistor',
-                 'tile',
-                 'cable',
-                 'zipper',
-                 'toothbrush',
-                 'metal_nut',
-                 'hazelnut',
-                 'screw',
-                 'grid',
-                 'wood'
-                 ]
+    obj_list = ['recoating']
 
     with torch.cuda.device(args.gpu_id):
         test(obj_list,args.data_path, args.checkpoint_path, args.base_model_name)
