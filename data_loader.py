@@ -89,7 +89,7 @@ class MVTecDRAEMTrainDataset(Dataset):
                       iaa.Affine(rotate=(-45, 45))
                       ]
         
-        self.to_grayscale = iaa.Grayscale((0.6, 0.9))
+        self.to_grayscale = iaa.Grayscale((0.8, 0.99))
 
         self.rot = iaa.Sequential([iaa.Affine(rotate=(-90, 90))])
 

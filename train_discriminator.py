@@ -44,7 +44,7 @@ def train_on_device(obj_names, args):
                                     #   {"params": model.parameters(), "lr": args.lr},
                                       {"params": model_seg.parameters(), "lr": args.lr}])
 
-        scheduler = optim.lr_scheduler.MultiStepLR(optimizer,[args.epochs*0.8,args.epochs*0.9],gamma=0.2, last_epoch=-1)
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer,[args.epochs*0.6,args.epochs*0.9],gamma=0.2, last_epoch=-1)
 
         # loss_l2 = torch.nn.modules.loss.MSELoss()
         # loss_ssim = SSIM()
