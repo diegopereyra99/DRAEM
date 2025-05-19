@@ -23,7 +23,7 @@ class MVTecDRAEMTestDataset(Dataset):
             mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
         else:
             mask = np.zeros((image.shape[0],image.shape[1]))
-        if self.resize_shape != None:
+        if self.resize_shape is not None:
             image = cv2.resize(image, dsize=(self.resize_shape[1], self.resize_shape[0]))
             mask = cv2.resize(mask, dsize=(self.resize_shape[1], self.resize_shape[0]))
 
@@ -89,7 +89,15 @@ class MVTecDRAEMTrainDataset(Dataset):
                       iaa.Affine(rotate=(-45, 45))
                       ]
         
-        self.to_grayscale = iaa.Grayscale((0.8, 0.99))
+        self.test_augmenters = [
+            # iaa.GammaContrast(),
+            # iaa.pillike.EnhanceSharpness(),
+            iaa.Invert(p=0.5),
+            # iaa.pillike.Autocontrast(cutoff=(0, 1)),
+            # iaa.Posterize(nb_bits=(1, 3)),
+        ]                        
+        
+        self.to_grayscale = iaa.Grayscale((0.9, 1.0))
 
         self.rot = iaa.Sequential([iaa.Affine(rotate=(-90, 90))])
 
@@ -107,6 +115,9 @@ class MVTecDRAEMTrainDataset(Dataset):
                               ])
         # The augmented image is converted to grayscale because otherwise it is to easy for the detector to see where there is color
         return aug
+    
+    def TestAugmenter(self):
+        return iaa.Sequential(self.test_augmenters)
 
     def augment_image(self, image, anomaly_source_path):
         aug = self.randAugmenter()
@@ -129,8 +140,16 @@ class MVTecDRAEMTrainDataset(Dataset):
 
         beta = torch.rand(1).numpy()[0] * 0.8
 
-        augmented_image = image * (1 - perlin_thr) + (1 - beta) * img_thr + beta * image * (
-            perlin_thr)
+        augmented_image = image * (1 - perlin_thr) + (1 - beta) * img_thr + beta * image * (perlin_thr)
+
+        # test_anomaly = torch.rand(1).numpy()[0]
+        # if test_anomaly > 0.7:
+        #     # Get ranodm test image and mix it with the augmented image
+        #     test_image, test_mask = self.get_random_test_image(augmented=True)
+        #     beta = 0.2
+        #     # print(test_image.shape, test_mask.shape, augmented_image.shape)
+        #     augmented_image = augmented_image * (1 - test_mask) + (1 - beta) * test_image * test_mask + beta * augmented_image * (test_mask)
+        #     perlin_thr = ((perlin_thr.astype(np.float32) + test_mask.astype(np.float32)) > 0).astype(np.float32)
 
         no_anomaly = torch.rand(1).numpy()[0]
         if no_anomaly > 0.5:
@@ -159,13 +178,46 @@ class MVTecDRAEMTrainDataset(Dataset):
         image = np.transpose(image, (2, 0, 1))
         anomaly_mask = np.transpose(anomaly_mask, (2, 0, 1))
         return image, augmented_image, anomaly_mask, has_anomaly
+    
+    def get_random_test_image(self, augmented=False):
+        test_paths = glob.glob(os.path.join(self.root_dir, "../../test", "20193/*.png"))
+        idx = torch.randint(0, len(test_paths), (1,)).item()
+        image_path = test_paths[idx]
+        image = cv2.imread(image_path)
+        image = cv2.resize(image, dsize=(self.resize_shape[1], self.resize_shape[0]))
 
-    def __getitem__(self, idx):
+        mask_file_name = os.path.basename(image_path).split(".")[0]+"_mask.png"
+        masks_path = os.path.join(self.root_dir, "../../ground_truth", "20193", mask_file_name)
+        anomaly_mask = cv2.imread(masks_path, cv2.IMREAD_GRAYSCALE)
+        anomaly_mask = cv2.resize(anomaly_mask, dsize=(self.resize_shape[1], self.resize_shape[0]))
+        
+        
+        if augmented:
+            aug = self.TestAugmenter()
+            image = aug(image=image)
+            anomaly_mask = cv2.dilate(anomaly_mask, np.ones((3, 3), np.uint8), iterations=1)
+
+        image = np.array(image).reshape((image.shape[0], image.shape[1], image.shape[2])).astype(np.float32) / 255.0
+        anomaly_mask = np.array(anomaly_mask).reshape((anomaly_mask.shape[0], anomaly_mask.shape[1], 1)).astype(np.float32) / 255.0
+
+        if augmented:
+            return image, anomaly_mask
+        
+        image = np.transpose(image, (2, 0, 1))
+        anomaly_mask = np.transpose(anomaly_mask, (2, 0, 1))
+        
+        return image, anomaly_mask
+
+
+    def __getitem__(self, idx):   
         idx = torch.randint(0, len(self.image_paths), (1,)).item()
         anomaly_source_idx = torch.randint(0, len(self.anomaly_source_paths), (1,)).item()
         image, augmented_image, anomaly_mask, has_anomaly = self.transform_image(self.image_paths[idx],
-                                                                           self.anomaly_source_paths[anomaly_source_idx])
-        sample = {'image': image, "anomaly_mask": anomaly_mask,
+                                                                        self.anomaly_source_paths[anomaly_source_idx])
+        
+        test_image, test_mask = self.get_random_test_image()
+
+        sample = {'image': image, "anomaly_mask": anomaly_mask, "test_image": test_image, "test_mask": test_mask,
                   'augmented_image': augmented_image, 'has_anomaly': has_anomaly, 'idx': idx}
 
         return sample

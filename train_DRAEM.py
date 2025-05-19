@@ -6,6 +6,7 @@ from tensorboard_visualizer import TensorboardVisualizer
 from model_unet import ReconstructiveSubNetwork, DiscriminativeSubNetwork
 from loss import FocalLoss, SSIM
 import os
+from tqdm import tqdm
 
 def get_lr(optimizer):
     for param_group in optimizer.param_groups:
@@ -32,16 +33,22 @@ def train_on_device(obj_names, args):
 
         visualizer = TensorboardVisualizer(log_dir=os.path.join(args.log_path, run_name+"/"))
 
-        model = ReconstructiveSubNetwork(in_channels=3, out_channels=3)
-        model.cuda()
-        model.apply(weights_init)
-
+        # model = ReconstructiveSubNetwork(in_channels=3, out_channels=3)
         model_seg = DiscriminativeSubNetwork(in_channels=6, out_channels=2)
-        model_seg.cuda()
-        model_seg.apply(weights_init)
+        
+        if args.weights is not None:
+            # model.load_state_dict(torch.load(args.weights + ".pckl", map_location='cuda:0'))
+            # model.cuda()
+            model_seg.load_state_dict(torch.load(args.weights + "_seg.pckl", map_location='cuda:0'))
+            model_seg.cuda()
+        else:
+            # model.apply(weights_init)
+            # model.cuda()
+            model_seg.apply(weights_init)
+            model_seg.cuda()
 
         optimizer = torch.optim.Adam([
-                                      {"params": model.parameters(), "lr": args.lr},
+                                    #   {"params": model.parameters(), "lr": args.lr},
                                       {"params": model_seg.parameters(), "lr": args.lr}])
 
         scheduler = optim.lr_scheduler.MultiStepLR(optimizer,[args.epochs*0.8,args.epochs*0.9],gamma=0.2, last_epoch=-1)
@@ -58,12 +65,18 @@ def train_on_device(obj_names, args):
         n_iter = 0
         for epoch in range(args.epochs):
             print("Epoch: "+str(epoch))
-            for i_batch, sample_batched in enumerate(dataloader):
+            for i_batch, sample_batched in tqdm(enumerate(dataloader)):
                 gray_batch = sample_batched["image"].cuda()
                 aug_gray_batch = sample_batched["augmented_image"].cuda()
                 anomaly_mask = sample_batched["anomaly_mask"].cuda()
 
-                gray_rec = model(aug_gray_batch)
+                if n_iter % 100 == 0:
+                    aug_gray_batch[-1] = sample_batched["test_image"][0].cuda()
+                    gray_batch[-1] = sample_batched["test_image"][0].cuda()
+                    anomaly_mask[-1] = sample_batched["test_mask"][0].cuda()
+
+                # gray_rec = model(aug_gray_batch)
+                gray_rec = torch.ones(aug_gray_batch.shape).cuda() * 0.5
                 joined_in = torch.cat((gray_rec, aug_gray_batch), dim=1)
 
                 out_mask = model_seg(joined_in)
@@ -73,32 +86,32 @@ def train_on_device(obj_names, args):
                 ssim_loss = loss_ssim(gray_rec, gray_batch)
 
                 segment_loss = loss_focal(out_mask_sm, anomaly_mask)
-                loss = l2_loss + ssim_loss + segment_loss
+                loss = segment_loss
 
                 optimizer.zero_grad()
 
-                loss.backward()
-                optimizer.step()
+                if not (n_iter % 100 == 0):
+                    loss.backward()
+                    optimizer.step()
 
-                if args.visualize and n_iter % 200 == 0:
+                if args.visualize and n_iter % 20 == 0:
                     visualizer.plot_loss(l2_loss, n_iter, loss_name='l2_loss')
                     visualizer.plot_loss(ssim_loss, n_iter, loss_name='ssim_loss')
                     visualizer.plot_loss(segment_loss, n_iter, loss_name='segment_loss')
-                if args.visualize and n_iter % 400 == 0:
+                if args.visualize and n_iter % 100 == 0:
                     t_mask = out_mask_sm[:, 1:, :, :]
                     visualizer.visualize_image_batch(aug_gray_batch, n_iter, image_name='batch_augmented')
                     visualizer.visualize_image_batch(gray_batch, n_iter, image_name='batch_recon_target')
                     visualizer.visualize_image_batch(gray_rec, n_iter, image_name='batch_recon_out')
                     visualizer.visualize_image_batch(anomaly_mask, n_iter, image_name='mask_target')
                     visualizer.visualize_image_batch(t_mask, n_iter, image_name='mask_out')
-
-
+                
+                    torch.save(model_seg.state_dict(), os.path.join(args.checkpoint_path, run_name+f"epoch{epoch:02d}_{n_iter}_seg.pckl"))
                 n_iter +=1
 
             scheduler.step()
 
-            torch.save(model.state_dict(), os.path.join(args.checkpoint_path, run_name+".pckl"))
-            torch.save(model_seg.state_dict(), os.path.join(args.checkpoint_path, run_name+"_seg.pckl"))
+            # torch.save(model.state_dict(), os.path.join(args.checkpoint_path, run_name+".pckl"))
 
 
 if __name__=="__main__":
@@ -115,6 +128,7 @@ if __name__=="__main__":
     parser.add_argument('--checkpoint_path', action='store', type=str, required=True)
     parser.add_argument('--log_path', action='store', type=str, required=True)
     parser.add_argument('--num-workers', action='store', default=16, type=int)
+    parser.add_argument('--weights', action='store', default=None, type=str)
     parser.add_argument('--visualize', action='store_true')
 
     args = parser.parse_args()
